@@ -113,9 +113,12 @@ async function handleIncomingTask(req, res, rawBody) {
     return sendJson(res, 409, { error: 'Task already exists', taskId: task.taskId });
   }
 
+  const selfCallbackUrl = `${config.publicUrl}/ata/v1/callback/${task.taskId}`;
   const record = storage.save({
     ...task,
     status: 'received',
+    callbackUrl: selfCallbackUrl,
+    clientCallbackUrl: task.callbackUrl,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -123,8 +126,8 @@ async function handleIncomingTask(req, res, rawBody) {
   console.log(`[ATA] ← task ${task.taskId} from ${task.from} (action: ${task.payload?.action})`);
   sendJson(res, 202, { accepted: true, taskId: task.taskId, message: 'Task received and queued' });
 
-  // Fire-and-forget: execute task in-process and POST result to callbackUrl
-  executeTask({ task: record, callbackUrl: record.callbackUrl })
+  // Fire-and-forget: execute task in-process and POST result to selfCallbackUrl
+  executeTask({ task: record, callbackUrl: selfCallbackUrl })
     .then(({ accepted, message }) => {
       storage.update(task.taskId, { status: accepted ? 'executing' : 'failed', executorMessage: message });
       console.log(`[ATA] Executor: ${message}`);
@@ -214,6 +217,31 @@ server.listen(config.port, config.host, () => {
   console.log(`  POST ${config.publicUrl}/ata/v1/task`);
   console.log(`  POST ${config.publicUrl}/ata/v1/callback/:taskId`);
   console.log('');
+
+  // Cloudflare Tunnel support
+  if (process.argv.includes('--tunnel')) {
+    const { spawn } = require('child_process');
+    console.log('[PACT] Starting Cloudflare Tunnel (cloudflared)...');
+    const cf = spawn('cloudflared', ['tunnel', '--url', `http://localhost:${config.port}`], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const parseUrl = (data) => {
+      const match = data.toString().match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+      if (match) {
+        config.publicUrl = match[0];
+        console.log('');
+        console.log('🌍 Public URL (share this with your peer):');
+        console.log(`   ${config.publicUrl}`);
+        console.log(`   They run: node pact.js send --to ${config.publicUrl}/ata/v1 --task '{"action":"ask_agent","content":"hi"}' --secret YOUR_SECRET`);
+        console.log('');
+      }
+    };
+    cf.stdout.on('data', parseUrl);
+    cf.stderr.on('data', parseUrl);
+    cf.on('error', () => {
+      console.warn('[PACT] cloudflared not installed. Get it: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/');
+    });
+  }
 });
 
 setInterval(() => {
