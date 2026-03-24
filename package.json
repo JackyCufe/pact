@@ -1,0 +1,11 @@
+{
+  "name": "ata-standalone",
+  "version": "0.1.0",
+  "description": "Personal Agent-to-Agent protocol — zero dependencies, any LLM backend",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "server": "node ata-server.js",
+    "client": "node ata-client.js"
+  }
+}
