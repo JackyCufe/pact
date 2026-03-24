@@ -13,3 +13,4 @@ data/
 # Editor
 .DS_Store
 .vscode/
+.pact/
